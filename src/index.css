@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Deep space navy background */
+    --background: 224 55% 11%;
+    --foreground: 220 20% 92%;
+
+    /* Glass card effects */
+    --card: 224 45% 14%;
+    --card-foreground: 220 20% 92%;
+
+    --popover: 224 45% 14%;
+    --popover-foreground: 220 20% 92%;
+
+    /* Cyan primary accent */
+    --primary: 192 100% 64%;
+    --primary-foreground: 224 55% 11%;
+
+    /* Dark blue secondary */
+    --secondary: 220 30% 20%;
+    --secondary-foreground: 220 20% 92%;
+
+    /* Muted elements */
+    --muted: 220 30% 18%;
+    --muted-foreground: 220 15% 65%;
+
+    /* Green accent */
+    --accent: 150 100% 62%;
+    --accent-foreground: 224 55% 11%;
+
+    /* Orange destructive */
+    --destructive: 22 100% 50%;
+    --destructive-foreground: 220 20% 92%;
+
+    --border: 220 30% 25%;
+    --input: 220 30% 20%;
+    --ring: 192 100% 64%;
+
+    --radius: 0.75rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(90deg, hsl(192 100% 64%), hsl(150 100% 62%));
+    --gradient-glow: linear-gradient(180deg, rgba(70, 211, 255, 0.08), rgba(70, 211, 255, 0.02));
+    
+    /* Shadows */
+    --shadow-neon: 0 10px 28px hsl(192 100% 64% / 0.35);
+    --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.45);
+    
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --sidebar-background: 220 30% 15%;
+    --sidebar-foreground: 220 20% 92%;
+    --sidebar-primary: 192 100% 64%;
+    --sidebar-primary-foreground: 224 55% 11%;
+    --sidebar-accent: 220 30% 20%;
+    --sidebar-accent-foreground: 220 20% 92%;
+    --sidebar-border: 220 30% 25%;
+    --sidebar-ring: 192 100% 64%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Orbitron', system-ui, -apple-system, sans-serif;
+  }
+
+  /* Animated grid background */
+  @keyframes pan {
+    from { background-position: 0 0, 0 0; }
+    to { background-position: 1400px 0, 0 1400px; }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(192 100% 64% / 0.4); }
+    70% { box-shadow: 0 0 0 10px hsl(192 100% 64% / 0); }
+  }
+
+  @keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+  }
+
+  @keyframes card-appear {
+    0% { opacity: 0; transform: translateY(20px) scale(0.95); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
