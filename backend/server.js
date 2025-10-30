@@ -19,8 +19,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/polydash'
 });
 
 // Routes
-app.use('/api/scores', require('./routes/scores'));
-app.use('/api/auth', require('./routes/auth'));
+// Game-only server: auth and user routes removed in cleanup branch
 
 // Optional debug routes (mount if present)
 try { app.use('/api/debug', require('./routes/debug')); } catch (e) {

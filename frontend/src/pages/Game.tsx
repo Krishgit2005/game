@@ -8,6 +8,31 @@ const Game = () => {
   const bgMusicRef = useRef<HTMLAudioElement>(null);
   const deathSoundRef = useRef<HTMLAudioElement>(null);
   const jumpSoundRef = useRef<HTMLAudioElement>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  
+  // Set up canvas dimensions
+  useEffect(() => {
+    const setupCanvas = () => {
+      const gameCanvas = gameCanvasRef.current;
+      const bgCanvas = bgCanvasRef.current;
+      
+      if (gameCanvas && bgCanvas) {
+        // Set dimensions to match window size
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        
+        gameCanvas.width = width;
+        gameCanvas.height = height;
+        bgCanvas.width = width;
+        bgCanvas.height = height;
+      }
+    };
+
+    setupCanvas();
+    window.addEventListener('resize', setupCanvas);
+    
+    return () => window.removeEventListener('resize', setupCanvas);
+  }, []);
 
   useEffect(() => {
     // This effect will initialize the game once the canvases are ready
@@ -76,18 +101,18 @@ const Game = () => {
     };
   }, []);
 
-  // Pause state mirrored from the game engine
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-
   useEffect(() => {
+    // Check game state periodically
     const updater = setInterval(() => {
-      // Read global gameState if available
       const gs = (window as any).gameState;
       if (gs && typeof gs.isPaused === "boolean") {
         setIsPaused(!!gs.isPaused);
       }
     }, 250);
-    return () => clearInterval(updater);
+
+    return () => {
+      clearInterval(updater);
+    };
   }, []);
 
   const handlePauseToggle = () => {
@@ -147,7 +172,7 @@ const Game = () => {
       </div>
 
       {/* Canvas container */}
-      <div id="canvas-set" className="w-full relative">
+      <div id="canvas-set" className="w-full h-full relative">
         {/* Music & Exit controls (bottom right) */}
         <div className="fixed bottom-6 right-6 z-50 flex flex-row gap-3 items-end">
           <button
@@ -178,12 +203,14 @@ const Game = () => {
         <canvas 
           id="canvas-game" 
           ref={gameCanvasRef}
-          className="absolute block"
+          className="absolute inset-0 block w-full h-full"
+          style={{ imageRendering: 'pixelated' }}
         />
         <canvas 
           id="canvas-background" 
           ref={bgCanvasRef}
-          className="block z-[1]"
+          className="block w-full h-full"
+          style={{ imageRendering: 'pixelated' }}
         />
       </div>
     </div>
