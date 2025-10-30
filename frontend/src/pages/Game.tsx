@@ -46,6 +46,36 @@ const Game = () => {
     };
   }, []);
 
+  // Ensure background music can play after a user gesture (fixes autoplay blocks).
+  useEffect(() => {
+    const tryEnableAudio = async () => {
+      const bg = bgMusicRef.current as HTMLAudioElement | null;
+      if (!bg) return;
+      try {
+        // set a sensible default volume
+        if (typeof bg.volume === "number") bg.volume = 0.6;
+        // attempt to play; browsers allow play() inside a user gesture handler
+        await bg.play();
+        console.log("Background music started after user gesture");
+      } catch (e) {
+        // Play may be blocked if not in a gesture; that's okay — we'll wait for a gesture.
+        console.warn("Background music play attempt failed:", e);
+      } finally {
+        window.removeEventListener("keydown", tryEnableAudio);
+        window.removeEventListener("pointerdown", tryEnableAudio);
+      }
+    };
+
+    // Listen for first user gesture to enable audio reliably
+    window.addEventListener("keydown", tryEnableAudio, { once: true });
+    window.addEventListener("pointerdown", tryEnableAudio, { once: true });
+
+    return () => {
+      window.removeEventListener("keydown", tryEnableAudio);
+      window.removeEventListener("pointerdown", tryEnableAudio);
+    };
+  }, []);
+
   // Pause state mirrored from the game engine
   const [isPaused, setIsPaused] = useState<boolean>(false);
 
@@ -78,6 +108,10 @@ const Game = () => {
     }
   };
 
+  const handleExit = () => {
+    window.location.href = "/";
+  };
+
   return (
     <div 
       id="game-interface" 
@@ -101,11 +135,11 @@ const Game = () => {
           src="/images/city-background.png" 
           alt="City background reversed"
         />
-        <audio id="backGroundMusic" ref={bgMusicRef}>
-          <source src="https://www.dropbox.com/s/2t2sf02z7pt2y6v/White%20Bat%20Audio%20-%20Inception.mp3?raw=1" />
+        <audio id="backGroundMusic" ref={bgMusicRef} loop preload="auto">
+          <source src="https://www.dropbox.com/s/2t2sf02z7pt2y6v/White%20Bat%20Audio%20-%20Inception.mp3?raw=1" type="audio/mpeg" />
         </audio>
-        <audio id="deathSound" ref={deathSoundRef}>
-          <source src="https://www.dropbox.com/s/atqwpuraxkqj8au/esm_8bit_explosion_medium_bomb_boom_blast_cannon_retro_old_school_classic_cartoon.mp3?raw=1" />
+        <audio id="deathSound" ref={deathSoundRef} preload="auto">
+          <source src="https://www.dropbox.com/s/atqwpuraxkqj8au/esm_8bit_explosion_medium_bomb_boom_blast_cannon_retro_old_school_classic_cartoon.mp3?raw=1" type="audio/mpeg" />
         </audio>
         <audio id="jumpSound" ref={jumpSoundRef}>
           <source src="https://www.dropbox.com/scl/fi/lj1w3k7o8m76c3m4u0t7c/jump_07.wav?rlkey=7i2t1w9o5xq9d3l7d9sb0s3g8&raw=1" type="audio/wav" />
@@ -114,6 +148,16 @@ const Game = () => {
 
       {/* Canvas container */}
       <div id="canvas-set" className="w-full relative">
+        {/* Music & Exit controls (bottom right) */}
+        <div className="fixed bottom-6 right-6 z-50 flex flex-row gap-3 items-end">
+          <button
+            onClick={handleExit}
+            className="px-4 py-2 rounded-md shadow bg-red-700/90 text-white hover:bg-red-900 transition-all"
+          >
+            Exit
+          </button>
+        </div>
+
         {/* Controls overlay */}
         <div className="absolute top-4 left-4 z-50 flex gap-2">
           <button
@@ -130,6 +174,7 @@ const Game = () => {
             Restart
           </button>
         </div>
+
         <canvas 
           id="canvas-game" 
           ref={gameCanvasRef}

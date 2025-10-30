@@ -13,8 +13,17 @@ const Start = () => {
   const navigate = useNavigate();
   const [showInstructions, setShowInstructions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showLogin, setShowLogin] = useState(true);
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ username: '', password: '' });
+  const [authError, setAuthError] = useState('');
 
   const handleStartGame = () => {
+    if (!isAuthenticated) {
+      setAuthError('You must be logged in to start the game.');
+      return;
+    }
     setIsLoading(true);
     setTimeout(() => {
       navigate("/game");
@@ -38,6 +47,60 @@ const Start = () => {
     window.addEventListener("keydown", handleKeyDown as any);
     return () => window.removeEventListener("keydown", handleKeyDown as any);
   });
+
+  // Simulated login/register handlers (replace with real API calls)
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (loginForm.username && loginForm.password) {
+      try {
+        const res = await fetch('http://localhost:4000/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: loginForm.username, password: loginForm.password })
+        });
+        const data = await res.json();
+        if (res.ok && data.token) {
+          setIsAuthenticated(true);
+          try { localStorage.setItem('polydash_username', loginForm.username); } catch (e) {}
+          setShowLogin(false);
+        } else {
+          setAuthError(data.error || 'Login failed.');
+        }
+      } catch (err: any) {
+        console.error('Login fetch error:', err);
+        setAuthError(err?.message || 'Network error. Please try again.');
+      }
+    } else {
+      setAuthError('Please enter username and password.');
+    }
+  };
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (registerForm.username && registerForm.password) {
+      try {
+        const res = await fetch('http://localhost:4000/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: registerForm.username, password: registerForm.password })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setIsAuthenticated(true);
+          try { localStorage.setItem('polydash_username', registerForm.username); } catch (e) {}
+          setShowLogin(false);
+        } else {
+          setAuthError(data.error || 'Registration failed.');
+        }
+      } catch (err: any) {
+        console.error('Register fetch error:', err);
+        setAuthError(err?.message || 'Network error. Please try again.');
+      }
+    } else {
+      setAuthError('Please enter username and password.');
+    }
+  };
 
   return (
     <div className="min-h-screen overflow-hidden relative flex items-center justify-center bg-gradient-to-br from-[#1a2a6c] via-[#1a1e3c] to-background">
@@ -78,7 +141,7 @@ const Start = () => {
         <div className="flex gap-3 flex-wrap mb-4">
           <Button
             onClick={handleStartGame}
-            disabled={isLoading}
+            disabled={isLoading || !isAuthenticated}
             className="min-w-[170px] px-5 py-6 rounded-xl font-bold text-lg bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all hover:translate-y-[-2px] relative overflow-hidden group"
             style={{
               boxShadow: '0 10px 28px rgba(70,211,255,.35), inset 0 -2px 0 rgba(0,0,0,.15)',
@@ -88,7 +151,6 @@ const Start = () => {
             <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:animate-[shimmer_0.5s]" />
             {isLoading ? "Loading..." : "Start Game"}
           </Button>
-          
           <Button
             onClick={() => setShowInstructions(true)}
             variant="secondary"
@@ -101,17 +163,29 @@ const Start = () => {
           </Button>
         </div>
 
-        <div className="text-sm opacity-75 flex items-center gap-2 flex-wrap">
-          <span>Shortcuts:</span>
-          {["1", "Enter", "Space"].map((key) => (
-            <span
-              key={key}
-              className="inline-flex items-center justify-center w-6 h-6 bg-white/10 rounded border border-white/20 text-xs"
-            >
-              {key}
-            </span>
-          ))}
-        </div>
+        {/* Login/Register UI */}
+        {!isAuthenticated && (
+          <div className="mb-4 p-4 rounded-lg bg-white/10 shadow-lg flex flex-col gap-4">
+            <div className="flex gap-4 mb-2">
+              <button onClick={() => setShowLogin(true)} className={`px-4 py-2 rounded ${showLogin ? 'bg-primary text-white' : 'bg-gray-700 text-gray-200'}`}>Login</button>
+              <button onClick={() => setShowLogin(false)} className={`px-4 py-2 rounded ${!showLogin ? 'bg-primary text-white' : 'bg-gray-700 text-gray-200'}`}>Register</button>
+            </div>
+            {showLogin ? (
+              <form onSubmit={handleLogin} className="flex flex-col gap-2">
+                <input type="text" placeholder="Username" value={loginForm.username} onChange={e => setLoginForm(f => ({ ...f, username: e.target.value }))} className="px-3 py-2 rounded bg-gray-900/80 text-white" />
+                <input type="password" placeholder="Password" value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} className="px-3 py-2 rounded bg-gray-900/80 text-white" />
+                <button type="submit" className="mt-2 px-4 py-2 rounded bg-primary text-white font-bold">Login</button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister} className="flex flex-col gap-2">
+                <input type="text" placeholder="Username" value={registerForm.username} onChange={e => setRegisterForm(f => ({ ...f, username: e.target.value }))} className="px-3 py-2 rounded bg-gray-900/80 text-white" />
+                <input type="password" placeholder="Password" value={registerForm.password} onChange={e => setRegisterForm(f => ({ ...f, password: e.target.value }))} className="px-3 py-2 rounded bg-gray-900/80 text-white" />
+                <button type="submit" className="mt-2 px-4 py-2 rounded bg-primary text-white font-bold">Register</button>
+              </form>
+            )}
+            {authError && <div className="text-red-400 text-sm mt-1">{authError}</div>}
+          </div>
+        )}
 
         <div className="mt-4 text-xs opacity-55">
           Made for fun. Best experienced fullscreen.

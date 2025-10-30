@@ -706,6 +706,21 @@ class drawing {
       deathSound: document.getElementById("deathSound"),
       jumpSound: document.getElementById("jumpSound"),
     };
+    // Ensure background music loops continuously. Some environments may not honor
+    // the HTML `loop` attribute, so set it here and add a fallback ended handler.
+    try {
+      const bg = this.sound.backGroundMusic;
+      if (bg) {
+        bg.loop = true;
+        // Fallback: if ended event fires, restart playback
+        bg.addEventListener("ended", function () {
+          try {
+            bg.currentTime = 0;
+            bg.play().catch(() => {});
+          } catch (e) {}
+        });
+      }
+    } catch (e) {}
     
     this.shake = { t: 0, magnitude: 0 };
   }
@@ -935,9 +950,32 @@ function restart(parameters) {
   if (parameters === gameParameters.initial) {
     startX = 0;
     score = 0;
+    baseScore = 0;
   }
   heroInstance = new hero(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4], parameters[5], parameters[6], parameters[7], parameters[8]);
   drawingInstance.backGroundTimeScroll = backGroundPositionSauv.save;
+  // Clear previous checkpoints from grid and reset checkpoint counters
+  try {
+    if (gridInstance && Array.isArray(gridInstance.grid)) {
+      for (let col = 0; col < gridInstance.grid.length; col++) {
+        const cell = gridInstance.grid[col];
+        if (Array.isArray(cell)) {
+          // Remove any checkPoint instances
+          gridInstance.grid[col] = cell.filter(item => !(item instanceof checkPoint));
+          if (gridInstance.grid[col].length === 0) gridInstance.grid[col] = undefined;
+        }
+      }
+    }
+    checkPointCounter = 0;
+    frameTimeDiff.lastCheckPoint = 0;
+    backGroundPositionSauv.save = 0;
+    // reset runtime checkpoint tracker for automatic checkpoints
+    nextCheckpointIndex = 0;
+    // recreate the checkpoint value object for this hero instance
+    checkPointValue.checkpoint = new checkPoint(heroInstance);
+  } catch (e) {
+    console.error('Error while clearing checkpoints on restart:', e);
+  }
   drawingInstance.ctx.clearRect(0, 0, drawingInstance.width, drawingInstance.height);
     drawingInstance.drawBackGround();
     drawingInstance.setGridPosition(heroInstance);
@@ -991,8 +1029,7 @@ function restartGame() {
   cancelAnimationFrame(game);
   
   // Reset to initial state
-  drawingInstance.sound.backGroundMusic.pause();
-  drawingInstance.sound.backGroundMusic.currentTime = 0;
+  // Do not pause or reset background music; keep it continuous
   frameTimeDiff.startBegin = Date.now();
   backGroundPositionSauv.save = 0;
   loadLevel(currentLevel, gridInstance, heroInstance);
@@ -1020,14 +1057,11 @@ function deathFinish() {
       heroInstance.isDead = false;
       heroInstance.hasStarted = true;
       heroInstance.havefinished = false;
-      drawingInstance.sound.backGroundMusic.pause();
-      drawingInstance.sound.backGroundMusic.currentTime = drawingInstance.sound.checkpointSaveTime;
-      drawingInstance.sound.backGroundMusic.play();
+  // Do not pause or reset background music; keep it continuous
       frameTimeDiff.lastTime = Date.now();
       game();
     } else {
-      drawingInstance.sound.backGroundMusic.pause();
-      drawingInstance.sound.backGroundMusic.currentTime = 0;
+  // Do not pause or reset background music; keep it continuous
       frameTimeDiff.startBegin = Date.now();
       backGroundPositionSauv.save = 0;
       loadLevel(currentLevel, gridInstance, heroInstance);
@@ -1049,8 +1083,7 @@ function winFinish() {
     if (keys.Space || keys.Enter) {
       restartGame();
     } else if (keys.KeyN) {
-      drawingInstance.sound.backGroundMusic.pause();
-      drawingInstance.sound.backGroundMusic.currentTime = 0;
+  // Do not pause or reset background music; keep it continuous
       frameTimeDiff.startBegin = Date.now();
       backGroundPositionSauv.save = 0;
       currentLevel = Math.min(currentLevel + 1, Object.keys(levels).length);
@@ -1087,19 +1120,23 @@ function game() {
       }
     }
     if (keys.KeyS && Date.now() - frameTimeDiff.lastCheckPoint > 200) {
-      addCheckPoint();
-      checkPointCounter++;
-      checkPointValue.checkpoint.update(heroInstance);
-      gridInstance.addCheckPoint(checkPointValue.checkpoint);
-      frameTimeDiff.lastCheckPoint = Date.now();
-      backGroundPositionSauv.save = drawingInstance.backGroundTimeScroll;
-      drawingInstance.sound.checkpointSaveTime = drawingInstance.sound.backGroundMusic.currentTime;
+      saveCheckPoint();
     }
     if (!heroInstance.hasStarted) {
       startX = heroInstance.body.center.x;
     }
     heroInstance.move(gridInstance);
-    score = Math.max(0, Math.floor((heroInstance.body.center.x - startX) * 10));
+    // Calculate distance-based score: baseScore + progress since last start/checkpoint
+    const distanceScore = Math.max(0, Math.floor((heroInstance.body.center.x - startX) * 10));
+    score = Math.max(0, baseScore + distanceScore);
+    // Automatic checkpoint trigger: if enabled and we've reached the next threshold
+    if (automaticCheckpointsEnabled && nextCheckpointIndex < checkpointScores.length) {
+      const nextThreshold = checkpointScores[nextCheckpointIndex];
+      if (score >= nextThreshold && Date.now() - frameTimeDiff.lastCheckPoint > checkpointMinIntervalMs) {
+        saveCheckPoint();
+        nextCheckpointIndex++;
+      }
+    }
     drawingInstance.ctx.clearRect(0, 0, drawingInstance.width, drawingInstance.height);
     if (drawingInstance.shake.t > 0) {
       drawingInstance.shake.t--;
@@ -1129,6 +1166,17 @@ function game() {
         try {
           localStorage.setItem("polydash_bestScore", String(bestScore));
         } catch (e) {}
+        // Send top score to backend if username is available
+        try {
+          const username = localStorage.getItem('polydash_username');
+          if (username) {
+            fetch('http://localhost:4000/api/scores', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: username, points: bestScore })
+            }).then(res => res.json()).then(data => console.log('Score saved to server:', data)).catch(err => console.warn('Failed to save score to server:', err));
+          }
+        } catch (e) {}
       }
       heroInstance.setDeathParticle();
       deathFinish();
@@ -1140,6 +1188,37 @@ function game() {
 
 function addCheckPoint() {
   gameParameters.saved = [[heroInstance.body.center.x, heroInstance.body.center.y], heroInstance.body.polarDirection.slice(), heroInstance.vx, heroInstance.vy0, heroInstance.xJump, heroInstance.yJump, heroInstance.g, heroInstance.t, heroInstance.isJumping];
+}
+
+// Centralized save checkpoint logic used by manual (KeyS) and automatic checkpoints
+function saveCheckPoint() {
+  try {
+    // Accumulate the score up to this checkpoint and reset startX so future progress adds on top
+    try {
+      const delta = Math.max(0, Math.floor((heroInstance.body.center.x - startX) * 10));
+      baseScore += delta;
+      startX = heroInstance.body.center.x;
+    } catch (e) {
+      console.warn('Could not compute checkpoint score delta:', e);
+    }
+    addCheckPoint();
+    checkPointCounter++;
+    if (checkPointValue.checkpoint && typeof checkPointValue.checkpoint.update === 'function') {
+      checkPointValue.checkpoint.update(heroInstance);
+    }
+    if (gridInstance && typeof gridInstance.addCheckPoint === 'function') {
+      gridInstance.addCheckPoint(checkPointValue.checkpoint);
+    }
+    frameTimeDiff.lastCheckPoint = Date.now();
+    backGroundPositionSauv.save = drawingInstance.backGroundTimeScroll;
+    if (drawingInstance.sound && drawingInstance.sound.backGroundMusic) {
+      drawingInstance.sound.checkpointSaveTime = drawingInstance.sound.backGroundMusic.currentTime;
+    }
+    console.log('Checkpoint saved (automatic/manual) at score:', score);
+    // checkpoint notification removed
+  } catch (e) {
+    console.error('Failed to save checkpoint:', e);
+  }
 }
 
 function keyEventHandler(event) {
@@ -1524,8 +1603,16 @@ const checkPointValue = {};
 const backGroundPositionSauv = { save: 0 };
 let checkPointCounter = 0;
 let score = 0;
+let baseScore = 0; // accumulated score from previous segments / checkpoints
 let bestScore = 0;
 let startX = 0;
+// Automatic checkpoint configuration (can be set at runtime)
+let checkpointScores = [4]; // array of score thresholds where checkpoints will be saved
+let nextCheckpointIndex = 0; // index of next checkpoint to trigger
+let automaticCheckpointsEnabled = false;
+const checkpointMinIntervalMs = 1000; // minimum ms between automatic checkpoints to avoid rapid repeats
+// On-screen checkpoint notification
+// (checkpoint notifications removed)
 try {
   bestScore = Number(localStorage.getItem("polydash_bestScore") || 0);
 } catch (e) {}
@@ -1549,6 +1636,15 @@ function AtLoad() {
   loadLevel(currentLevel, gridInstance, heroInstance);
   checkPointValue.checkpoint = new checkPoint(heroInstance);
   drawingInstance.drawMovingtext("Press Space to begin", 0, 0, 0, 0, 80, [0, 16], [50, 16], heroInstance);
+  // Default automatic checkpoint: save when score reaches 4
+  try {
+    checkpointScores = [4];
+    nextCheckpointIndex = 0;
+    automaticCheckpointsEnabled = true;
+    console.log('Default automatic checkpoint enabled at score 4');
+  } catch (e) {
+    console.error('Failed to enable default automatic checkpoint:', e);
+  }
   setTimeout(function () {
     restart(gameParameters.initial);
   }, 1000);
@@ -1571,6 +1667,24 @@ try {
   window.resumeGame = resumeGame;
   window.restartGame = restartGame;
   window.gameState = gameState;
+  // Expose automatic checkpoint controls
+  window.setAutomaticCheckpoints = function(scores) {
+    try {
+      if (!Array.isArray(scores)) scores = [scores];
+      checkpointScores = scores.map(Number).filter(n => !isNaN(n)).sort((a,b) => a - b);
+      nextCheckpointIndex = 0;
+      automaticCheckpointsEnabled = checkpointScores.length > 0;
+      console.log('Automatic checkpoints set:', checkpointScores);
+    } catch (e) {
+      console.error('Failed to set automatic checkpoints:', e);
+    }
+  };
+  window.clearAutomaticCheckpoints = function() {
+    checkpointScores = [];
+    nextCheckpointIndex = 0;
+    automaticCheckpointsEnabled = false;
+    console.log('Automatic checkpoints cleared');
+  };
 } catch (e) {
   // In some environments assignment to window may fail; ignore safely
 }

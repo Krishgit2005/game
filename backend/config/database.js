@@ -33,7 +33,9 @@ const connectDB = async () => {
     return conn;
   } catch (error) {
     console.error(`Error connecting to MongoDB: ${error.message}`);
-    process.exit(1); // Exit with failure
+    // Do not exit the process here so the server can still run in environments
+    // where MongoDB is not available. Routes should handle DB unavailability.
+    return null;
   }
 };
 
