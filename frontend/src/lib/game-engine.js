@@ -947,34 +947,82 @@ let gameState = {
 };
 
 function restart(parameters) {
-  if (parameters === gameParameters.initial) {
+  // Restart can accept either the initial parameters (array) or a saved-object
+  // with structure: { heroParams: [...], meta: { baseScore, startX, checkPointCounter, backGroundPosition, soundTime, lastCheckPoint } }
+  let heroParams;
+  let savedMeta = null;
+  const isInitialArray = Array.isArray(parameters) && parameters.length === 9 && parameters === gameParameters.initial;
+  if (isInitialArray || parameters === gameParameters.initial) {
+    // Fresh start
+    heroParams = gameParameters.initial;
+    startX = 0;
+    score = 0;
+    baseScore = 0;
+  } else if (parameters && parameters.heroParams) {
+    // Saved checkpoint object
+    heroParams = parameters.heroParams;
+    savedMeta = parameters.meta || {};
+  } else if (Array.isArray(parameters) && parameters.length === 9) {
+    // Raw array with hero params (backwards compatible)
+    heroParams = parameters;
+  } else {
+    // Fallback to initial
+    heroParams = gameParameters.initial;
     startX = 0;
     score = 0;
     baseScore = 0;
   }
-  heroInstance = new hero(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4], parameters[5], parameters[6], parameters[7], parameters[8]);
+
+  heroInstance = new hero(heroParams[0], heroParams[1], heroParams[2], heroParams[3], heroParams[4], heroParams[5], heroParams[6], heroParams[7], heroParams[8]);
+
+  // If we have saved meta, restore visual/audio state and scores
+  if (savedMeta) {
+    try {
+      baseScore = typeof savedMeta.baseScore === 'number' ? savedMeta.baseScore : baseScore;
+      startX = typeof savedMeta.startX === 'number' ? savedMeta.startX : startX;
+      checkPointCounter = typeof savedMeta.checkPointCounter === 'number' ? savedMeta.checkPointCounter : checkPointCounter;
+      frameTimeDiff.lastCheckPoint = typeof savedMeta.lastCheckPoint === 'number' ? savedMeta.lastCheckPoint : 0;
+      backGroundPositionSauv.save = typeof savedMeta.backGroundPosition === 'number' ? savedMeta.backGroundPosition : backGroundPositionSauv.save;
+      if (drawingInstance && drawingInstance.sound) {
+        drawingInstance.sound.checkpointSaveTime = typeof savedMeta.soundTime === 'number' ? savedMeta.soundTime : drawingInstance.sound.checkpointSaveTime;
+      }
+    } catch (e) {
+      console.warn('Failed to restore some saved checkpoint metadata:', e);
+    }
+  } else {
+    // No saved meta -> ensure defaults
+    checkPointCounter = 0;
+    frameTimeDiff.lastCheckPoint = 0;
+    backGroundPositionSauv.save = 0;
+  }
+
+  // Apply background scroll state
   drawingInstance.backGroundTimeScroll = backGroundPositionSauv.save;
-  // Clear previous checkpoints from grid and reset checkpoint counters
+
+  // Clear previous checkpoints from grid (we will re-add a single checkpoint representing current save)
   try {
     if (gridInstance && Array.isArray(gridInstance.grid)) {
       for (let col = 0; col < gridInstance.grid.length; col++) {
         const cell = gridInstance.grid[col];
         if (Array.isArray(cell)) {
           // Remove any checkPoint instances
-          gridInstance.grid[col] = cell.filter(item => !(item instanceof checkPoint));
+          gridInstance.grid[col] = cell.filter((item) => !(item instanceof checkPoint));
           if (gridInstance.grid[col].length === 0) gridInstance.grid[col] = undefined;
         }
       }
     }
-    checkPointCounter = 0;
-    frameTimeDiff.lastCheckPoint = 0;
-    backGroundPositionSauv.save = 0;
     // reset runtime checkpoint tracker for automatic checkpoints
     nextCheckpointIndex = 0;
-    // recreate the checkpoint value object for this hero instance
+    // recreate the checkpoint value object for this hero instance and re-add it if we restored a saved checkpoint
     checkPointValue.checkpoint = new checkPoint(heroInstance);
+    if (savedMeta) {
+      // re-insert the checkpoint representing the saved state
+      if (gridInstance && typeof gridInstance.addCheckPoint === 'function') {
+        gridInstance.addCheckPoint(checkPointValue.checkpoint);
+      }
+    }
   } catch (e) {
-    console.error('Error while clearing checkpoints on restart:', e);
+    console.error('Error while clearing/restoring checkpoints on restart:', e);
   }
   drawingInstance.ctx.clearRect(0, 0, drawingInstance.width, drawingInstance.height);
     drawingInstance.drawBackGround();
@@ -1129,10 +1177,21 @@ function game() {
     // Calculate distance-based score: baseScore + progress since last start/checkpoint
     const distanceScore = Math.max(0, Math.floor((heroInstance.body.center.x - startX) * 10));
     score = Math.max(0, baseScore + distanceScore);
-    // Automatic checkpoint trigger: if enabled and we've reached the next threshold
-    if (automaticCheckpointsEnabled && nextCheckpointIndex < checkpointScores.length) {
+    // Automatic checkpoint trigger: if enabled and we've reached the next threshold.
+    // Do not trigger automatic checkpoints while the player is actively holding Space
+    // (used for chaining jumps) to avoid unintended saves during continuous Space usage.
+    if (
+      automaticCheckpointsEnabled &&
+      nextCheckpointIndex < checkpointScores.length
+    ) {
       const nextThreshold = checkpointScores[nextCheckpointIndex];
-      if (score >= nextThreshold && Date.now() - frameTimeDiff.lastCheckPoint > checkpointMinIntervalMs) {
+      // Only save automatically when score threshold reached, sufficient time since
+      // last checkpoint, and the player is NOT holding Space.
+      if (
+        score >= nextThreshold &&
+        Date.now() - frameTimeDiff.lastCheckPoint > checkpointMinIntervalMs &&
+        !keys.Space
+      ) {
         saveCheckPoint();
         nextCheckpointIndex++;
       }
@@ -1202,7 +1261,24 @@ function saveCheckPoint() {
       console.warn('Could not compute checkpoint score delta:', e);
     }
     addCheckPoint();
-    checkPointCounter++;
+      checkPointCounter++;
+      // Build a richer saved snapshot so restart can fully restore state
+      try {
+        const heroParamsArray = Array.isArray(gameParameters.saved) ? gameParameters.saved.slice() : (gameParameters.saved && gameParameters.saved.heroParams) || [];
+        gameParameters.saved = {
+          heroParams: heroParamsArray,
+          meta: {
+            checkPointCounter: checkPointCounter,
+            baseScore: baseScore,
+            startX: startX,
+            backGroundPosition: drawingInstance ? drawingInstance.backGroundTimeScroll : backGroundPositionSauv.save,
+            soundTime: drawingInstance && drawingInstance.sound ? drawingInstance.sound.checkpointSaveTime : 0,
+            lastCheckPoint: frameTimeDiff.lastCheckPoint,
+          },
+        };
+      } catch (e) {
+        console.warn('Failed to create saved checkpoint snapshot:', e);
+      }
     if (checkPointValue.checkpoint && typeof checkPointValue.checkpoint.update === 'function') {
       checkPointValue.checkpoint.update(heroInstance);
     }
