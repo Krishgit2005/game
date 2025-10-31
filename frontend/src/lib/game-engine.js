@@ -2,20 +2,28 @@ function positivMod(n, mod) {
   return ((n % mod) + mod) % mod;
 }
 
+// Helper: round to a fixed number of decimals
+// Keeps floating-point values stable by rounding to `nDec` decimals.
 function keepNDec(x, nDec) {
   return Math.round(x * 10 ** nDec) / 10 ** nDec;
 }
 
+// Basic 2D point object
+// Represents a position (x,y). Small helper methods for copying,
+// comparing and moving points are provided. Coordinates are rounded
+// after translations to reduce floating-point drift.
 class point {
   constructor(x, y) {
     this.x = x;
     this.y = y;
   }
 
+  // Return a copy of this point
   copy() {
     return new point(this.x, this.y);
   }
 
+  // Coordinate comparisons
   sameAbsciss(other) {
     return this.x === other.x;
   }
@@ -24,19 +32,25 @@ class point {
     return this.y === other.y;
   }
 
+  // Exact equality of both coordinates
   equal(other) {
     return this.sameAbsciss(other) && this.sameOrdinate(other);
   }
 
+  // Distance to another point (Euclidean)
+  // NOTE: this was previously implemented incorrectly; make sure
+  // callers expect correct Euclidean distance.
   distance(other) {
-    return Math.sqrt((this.x - other.y) ** 2 + (this.y - other.y) ** 2);
+    return Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2);
   }
 
+  // Return a new point offset by vector v
   addVector(v) {
     let res = new point(this.x + v.x, this.y + v.y);
     return res;
   }
 
+  // Mutate this point by translating with vector v and round coordinates
   translate(v) {
     this.x += v.x;
     this.x = keepNDec(this.x, 10);
@@ -45,6 +59,9 @@ class point {
   }
 }
 
+// 2D vector utilities
+// Can be constructed either from two points (vector from M to N)
+// or from numeric x,y components. Provides arithmetic and geometry helpers.
 class vector {
   constructor(M, N) {
     if (M instanceof point) {
@@ -56,38 +73,48 @@ class vector {
     }
   }
 
+  // Is this the zero vector?
   is0() {
     return this.x === 0 && this.y === 0;
   }
 
+  // Add another vector
   sum(other) {
     let res = new vector(this.x + other.x, this.y + other.y);
     return res;
   }
 
+  // Multiply by scalar
   product(lambda) {
     let res = new vector(lambda * this.x, lambda * this.y);
     return res;
   }
 
+  // Dot product
   scalarProduct(other) {
     return this.x * other.x + this.y * other.y;
   }
 
+  // Length (magnitude)
   norm() {
     return Math.sqrt(this.scalarProduct(this));
   }
 
+  // Perpendicular vector (rotate 90 degrees)
   orthogonalVector() {
     let res = new vector(-this.y, this.x);
     return res;
   }
 
+  // Polar coordinates: [radius, angle]. Use atan2 for correct quadrant.
   polarCoordinate() {
-    return [this.norm(), Math.atan(this.y / this.x)];
+    return [this.norm(), Math.atan2(this.y, this.x)];
   }
 }
 
+// Straight line helper
+// Represents an infinite line defined by two points or by a point + direction vector.
+// Provides the line equation coefficients for Ax + By + C = 0 and a point containment test.
 class straightLine {
   constructor(point1, element) {
     if (element instanceof point) {
@@ -107,6 +134,7 @@ class straightLine {
     }
   }
 
+  // Return [A, B, C] for the line equation Ax + By + C = 0
   equation() {
     if (this.point1.sameAbsciss(this.point2)) {
       return [1, 0, -this.point1.x];
@@ -117,23 +145,28 @@ class straightLine {
     }
   }
 
+  // Check if a given point lies on the line (within rounding tolerance)
   containPoint(point) {
     let equationLine = this.equation();
     return keepNDec(equationLine[0] * point.x + equationLine[1] * point.y + equationLine[2], 10) === 0;
   }
 }
 
+// Finite line segment between two points
+// Used for edge calculations and simple intersection checks.
 class segment {
   constructor(point1, point2) {
     this.point1 = point1;
     this.point2 = point2;
   }
 
+  // Midpoint of the segment
   center() {
     let res = new point((this.point1.x + this.point2.x) / 2, (this.point1.y + this.point2.y) / 2);
     return res;
   }
 
+  // Check whether a point projects onto this segment (by dot products)
   containPoint(point) {
     let vector1 = new vector(this.point1, this.point2);
     let vector2 = new vector(this.point1, point);
@@ -142,6 +175,7 @@ class segment {
     return scalarProd1 >= 0 && scalarProd1 <= scalarProd2;
   }
 
+  // Rough intersection test with another segment using dot products
   intersect(other) {
     let segmentVector = new vector(this.point1, this.point2);
     let vector1 = new vector(this.point1, other.point1);
@@ -156,6 +190,13 @@ class segment {
   }
 }
 
+// POLYGON: represents any multi-sided shape used for collision detection
+// - `vertices` is an array of `point` objects describing the shape in order
+// - Provides helpers to translate the shape, return edges, compute centroid,
+//   and run SAT (Separating Axis Theorem) collision checks against other polygons
+// Plain language: a polygon stores its corner points (vertices). The code
+// builds edges from those vertices and uses geometric tests to tell whether
+// two shapes overlap (collide) or are separated by some axis.
 class polygon {
   constructor(vertices) {
     this.vertices = vertices;
@@ -175,6 +216,11 @@ class polygon {
     });
   }
 
+  /**
+   * Returns array of segments representing polygon edges
+   * Creates segments between consecutive vertices
+   * @returns {Array<segment>} Array of edge segments
+   */
   edges() {
     let edges = [];
     let nbVertices = this.vertices.length;
@@ -190,6 +236,11 @@ class polygon {
     return edges;
   }
 
+  /**
+   * Calculates center point of polygon
+   * Uses arithmetic mean of all vertex coordinates
+   * @returns {point} Geometric center point
+   */
   isoBarycenter() {
     let barycenterAbscissa = 0;
     let barycenterOrdinate = 0;
@@ -197,10 +248,21 @@ class polygon {
       barycenterAbscissa += point.x;
       barycenterOrdinate += point.y;
     });
-    let res = new point((1 / this.vertices.length) * barycenterAbscissa, (1 / this.vertices.length) * barycenterOrdinate);
+    let res = new point(
+      (1 / this.vertices.length) * barycenterAbscissa,
+      (1 / this.vertices.length) * barycenterOrdinate
+    );
     return res;
   }
 
+  /**
+   * Tests if an edge separates two polygons (SAT algorithm)
+   * Core component of collision detection system
+   * @param {polygon} other - Other polygon to test
+   * @param {segment} edge - Edge to test as separator
+   * @param {point} barycenter - Center point of this polygon
+   * @returns {boolean} True if edge separates polygons
+   */
   static separation(other, edge, barycenter) {
     let otherNbVertices = other.vertices.length;
     let segmentLine = new straightLine(edge.point1, edge.point2);
@@ -264,10 +326,16 @@ class polygon {
     }
 
     return isSeparated;
+    }
   }
-}
 
-class square extends polygon {
+  // SQUARE: a special polygon with four vertices used for player and many platforms
+  // - Can be constructed from either two corner points or from a center + polar direction
+  // - Keeps `center` and `polarDirection` for easy rotation/translation
+  // Plain language: square stores its four corner points as vertices and provides
+  // helpers to rotate, translate and find the lowest point(s) which are used to
+  // determine where the player's feet touch the ground.
+  class square extends polygon {
   constructor(element1, element2) {
     let point1;
     let point2;
@@ -358,17 +426,38 @@ class square extends polygon {
   }
 }
 
+/**
+ * Player character class with physics and collision
+ * Handles movement, jumping, and foot contact detection
+ */
 class hero {
+  /**
+   * Creates new player character
+   * @param {Array<number>} positionCenter - Initial [x,y] center position
+   * @param {Array<number>} positionPolarCoordinates - Initial rotation/orientation
+   * @param {number} vx - Horizontal velocity
+   * @param {number} vy0 - Initial vertical velocity
+   * @param {number} xJump - Horizontal jump velocity
+   * @param {number} yJump - Vertical jump velocity
+   * @param {number} g - Gravity constant
+   * @param {number} t - Current time
+   * @param {boolean} isJumping - Jump state
+   */
   constructor(positionCenter, positionPolarCoordinates, vx, vy0, xJump, yJump, g, t, isJumping) {
+    // Create body as square at initial position
     let intialPosition = new point(positionCenter[0], positionCenter[1]);
     this.body = new square(intialPosition, positionPolarCoordinates.slice());
+
+    // Set up foot collision points
     let footPoint = this.body.getLowestPointIndex();
     if (footPoint.length == 2) {
+      // Two-point foot for flat surfaces
       let footPoint1 = this.body.vertices[footPoint[0]].copy();
       let footPoint2 = this.body.vertices[footPoint[1]].copy();
       let foot1 = new polygon([footPoint1, footPoint2]);
       this.foot = [foot1];
     } else {
+      // Three-point foot for better stability
       let footPoint1 = this.body.vertices[footPoint[0]].copy();
       let footPoint2 = this.body.vertices[positivMod(footPoint[0] + 1, 4)].copy();
       let footPoint3 = this.body.vertices[positivMod(footPoint[0] - 1, 4)].copy();
@@ -377,29 +466,38 @@ class hero {
       this.foot = [foot1, foot2];
     }
 
-    this.vx = vx;
-    this.vy0 = vy0;
-    this.xJump = xJump;
-    this.yJump = yJump;
-    this.g = g;
-    this.t = t;
-    this.isJumping = isJumping;
-    this.startJumpPosition = this.body.center.copy();
-    this.hasStarted = false;
-    this.isDead = false;
-    this.haveFinished = false;
-    this.deathParticle = [];
+    // Set movement and physics parameters
+    this.vx = vx;      // Horizontal velocity
+    this.vy0 = vy0;    // Initial vertical velocity
+    this.xJump = xJump; // Jump strength (horizontal)
+    this.yJump = yJump;    // Jump strength (vertical)
+    this.g = g;         // Gravity constant
+    this.t = t;         // Current time
+    this.isJumping = isJumping;  // Current jump state
+    this.startJumpPosition = this.body.center.copy();  // Starting position of current jump
+    this.hasStarted = false;      // Game start flag
+    this.isDead = false;          // Death state
+    this.haveFinished = false;    // Level completion state
+    this.deathParticle = [];      // Particles for death animation
   }
 
+  /**
+   * Rotates the hero's body and updates foot collision points
+   * Called during movement and landing
+   * @param {number} angle - Rotation angle in radians
+   */
   rotate(angle) {
     this.body.rotate(angle);
+    // Recalculate foot positions after rotation
     let footPoint = this.body.getLowestPointIndex();
     if (footPoint.length == 2) {
+      // Two-point foot setup for flat surfaces
       let footPoint1 = this.body.vertices[footPoint[0]].copy();
       let footPoint2 = this.body.vertices[footPoint[1]].copy();
       let foot1 = new polygon([footPoint1, footPoint2]);
       this.foot = [foot1];
     } else {
+      // Three-point foot setup for stability on angles
       let footPoint1 = this.body.vertices[footPoint[0]].copy();
       let footPoint2 = this.body.vertices[positivMod(footPoint[0] + 1, 4)].copy();
       let footPoint3 = this.body.vertices[positivMod(footPoint[0] - 1, 4)].copy();
@@ -409,6 +507,10 @@ class hero {
     }
   }
 
+  /**
+   * Moves the hero's body and foot collision points
+   * @param {vector} transactionVector - Direction and distance to move
+   */
   translate(transactionVector) {
     this.body.translate(transactionVector);
     this.foot.forEach((footValue) => {
@@ -416,14 +518,24 @@ class hero {
     });
   }
 
+  /**
+   * Checks if hero's feet are in contact with platform ceiling
+   * Uses SAT (Separating Axis Theorem) for precise collision
+   * @param {Array<Array<point>>} previousFoot - Previous foot positions
+   * @param {polygon} platformInstance - Platform to check collision with
+   * @returns {boolean} True if feet are in contact with ceiling
+   */
   footContactWithRoof(previousFoot, platformInstance) {
     let cpt = 0;
     let footPolygon;
     for (let k = 0; k < this.foot.length; k++) {
+      // Create line between current and previous foot positions
       let lineTest = new straightLine(this.foot[k].vertices[1], previousFoot[k][0]);
       if (lineTest.containPoint(previousFoot[k][1])) {
+        // Simple line collision for direct movement
         footPolygon = new polygon([this.foot[k].vertices[1], previousFoot[k][0]]);
       } else {
+        // Complex polygon collision for diagonal movement
         footPolygon = new polygon([this.foot[k].vertices[0], this.foot[k].vertices[1], previousFoot[k][1], previousFoot[k][0]]);
       }
       if (!footPolygon.sat(platformInstance.roof)) {
@@ -433,21 +545,41 @@ class hero {
     return cpt > 0;
   }
 
+  /**
+   * Updates hero position based on physics and collisions
+   * Handles movement, jumping, and collision response
+   * @param {grid} gridInstance - Game grid for collision checking
+   */
   move(gridInstance) {
+    // Store previous foot positions for collision checks
     let previousFoot = [];
     this.foot.forEach((foot) => {
       previousFoot.push([foot.vertices[0].copy(), foot.vertices[1].copy()]);
     });
+    // Save current state for rollback if needed
     let tSauv = this.t;
     let yPosSauv = this.body.center.y;
     let xPosSauv = this.body.center.x;
-    let dt = frameTimeDiff.dt;
-    let translationVector = new vector(this.vx * dt, Math.max((-1 / 2) * this.g * dt * (2 * this.t + dt) + this.vy0 * dt, -1));
+
+    // Calculate physics-based movement
+    let dt = frameTimeDiff.dt;  // Time step
+    // Create movement vector combining horizontal velocity and gravity
+    let translationVector = new vector(
+      this.vx * dt,  // Horizontal movement
+      Math.max((-1 / 2) * this.g * dt * (2 * this.t + dt) + this.vy0 * dt, -1)  // Vertical movement with gravity
+    );
     this.translate(translationVector);
     this.t += dt;
-    let deadContactElementCenter = [];
-    let floorContactElementCenter = [];
-    let aroundGrid = gridInstance.grid.slice(Math.max(Math.floor(this.body.center.x - 1), 0), Math.floor(this.body.center.x + 2));
+
+    // Initialize collision tracking
+    let deadContactElementCenter = [];   // Track deadly collisions
+    let floorContactElementCenter = [];  // Track ground collisions
+    
+    // Check nearby grid cells for collisions
+    let aroundGrid = gridInstance.grid.slice(
+      Math.max(Math.floor(this.body.center.x - 1), 0),
+      Math.floor(this.body.center.x + 2)
+    );
     aroundGrid.forEach((col) => {
       if (col != undefined) {
         col.forEach((element) => {
@@ -1220,22 +1352,31 @@ function game() {
   } else {
     frameTimeDiff.endingBegin = Date.now();
     if (heroInstance.isDead) {
+      // Update local best score if this run is a new personal best
       if (score > bestScore) {
         bestScore = score;
         try {
           localStorage.setItem("polydash_bestScore", String(bestScore));
         } catch (e) {}
-        // Send top score to backend if username is available
-        try {
-          const username = localStorage.getItem('polydash_username');
-          if (username) {
-            fetch('http://localhost:4000/api/scores', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ username: username, points: bestScore })
-            }).then(res => res.json()).then(data => console.log('Score saved to server:', data)).catch(err => console.warn('Failed to save score to server:', err));
-          }
-        } catch (e) {}
+      }
+
+      // Always attempt to send the completed run score to the backend (so each run is recorded),
+      // but keep the local best score logic separate. This fixes the issue where a new user
+      // wouldn't submit a score if an older local best existed in localStorage.
+      try {
+        const username = localStorage.getItem('polydash_username');
+        if (username) {
+          fetch('http://localhost:4000/api/scores', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username, points: Math.max(0, Math.floor(score)) })
+          })
+            .then(res => res.json())
+            .then(data => console.log('Score saved to server:', data))
+            .catch(err => console.warn('Failed to save score to server:', err));
+        }
+      } catch (e) {
+        console.warn('Error while trying to send score to server:', e);
       }
       heroInstance.setDeathParticle();
       deathFinish();

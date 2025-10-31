@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { LeaderBoard } from "@/components/LeaderBoard";
 import {
   Dialog,
   DialogContent,
@@ -187,6 +188,10 @@ const Start = () => {
           </div>
         )}
 
+        <div className="mt-6 mb-4">
+          <LeaderBoard />
+        </div>
+
         <div className="mt-4 text-xs opacity-55">
           Made for fun. Best experienced fullscreen.
         </div>
@@ -212,7 +217,7 @@ const Start = () => {
                 <li>• Navigate your character through the neon obstacles</li>
                 <li>• Press <span className="text-accent font-bold">Space</span> or <span className="text-accent font-bold">Up Arrow</span> to jump</li>
                 <li>• Time your jumps carefully to avoid spikes and other hazards</li>
-                <li>• Collect power-ups to gain special abilities</li>
+            
                 <li>• Your score increases the further you progress</li>
                 <li>• Try to beat your high score with each attempt!</li>
               </ul>
